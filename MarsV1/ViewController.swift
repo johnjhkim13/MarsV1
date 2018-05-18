@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import CoreML
 
 enum Feature: Int{
     case solarPanels = 0, greenhouses, size
@@ -62,25 +63,22 @@ struct SizeDataSource{
     }
 }
 
-class ViewController: UIViewController, UIPickerViewDelegate {
+class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSource {
 
-    let pickerDataSource = PickerDataSource()
+    let model = MarsHabitatPricer()
     
-    @IBOutlet weak var pickerView: UIPickerView!{
-        didSet{
-            pickerView.delegate = self
-            
-            pickerView.dataSource = pickerDataSource
-            
-            let features: [Feature] = [.solarPanels, .greenhouses, .size]
-            
-            for feature in features{
-                pickerView.selectRow(2, inComponent: feature.rawValue, animated: false)
-                print("feature.rawValue=",feature.rawValue)
-            }
-        }
-    }
+    @IBOutlet weak var priceLabel: UILabel!
     
+    @IBOutlet weak var pickerView: UIPickerView!
+    
+    let priceFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .currency
+        formatter.usesGroupingSeparator = true
+        formatter.maximumFractionDigits = 0
+        return formatter
+    }()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -96,17 +94,14 @@ class ViewController: UIViewController, UIPickerViewDelegate {
         guard let feature = Feature(rawValue: component) else {
             fatalError("Invalid component \(component) found to represent a \(Feature.self). This shoiuld not happen based on the configuration set in the storyboard.")
         }
-        return pickerDataSource.title(for : row, feature: feature)
+        return self.title(for : row, feature: feature)
     }
     
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int){
         print(" Selected row = ", row)
+        
+        updatePredictedPrice()
     }
-    
-    
-}
-
-class PickerDataSource: NSObject, UIPickerViewDataSource, UIPickerViewDelegate{
     
     private let solarPanelsDataSource = SolarPanelDataSource()
     private let greenhousesDataSource = GreenhousesDataSource()
@@ -141,6 +136,26 @@ class PickerDataSource: NSObject, UIPickerViewDataSource, UIPickerViewDelegate{
         }
         return value!
     }
+    
+    func updatePredictedPrice(){
+        func selectedRow(for feature: Feature) -> Int {
+            return pickerView.selectedRow(inComponent: feature.rawValue)
+        }
+        
+        let solarPanels = self.value(for: selectedRow(for: .solarPanels), feature: .solarPanels)
+        let greenhouses = self.value(for: selectedRow(for: .greenhouses), feature: .greenhouses)
+        let size = self.value(for: selectedRow(for: .size), feature: .size)
+        
+        print("solarPanels =", solarPanels, greenhouses, size)
+        
+        guard let marsHabitatPricerOutput = try? model.prediction(solarPanels: solarPanels, greenhouses: greenhouses, size: size) else{
+            fatalError("Unexpected runtime error.")
+        }
+        
+        let price = marsHabitatPricerOutput.price
+        priceLabel.text = priceFormatter.string(for: price)
+    }
 }
+
 
 
